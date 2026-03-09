@@ -55,8 +55,11 @@ function applyMiddleware(app) {
     next();
   });
 
-  /* GLOBAL RATE LIMITER */
-  app.use(rateLimit({ windowMs: 15*60*1000, max: 300, standardHeaders: true, legacyHeaders: false }));
+  /* GLOBAL RATE LIMITER — skip media proxy paths */
+  app.use(rateLimit({
+    windowMs: 15*60*1000, max: 1000, standardHeaders: true, legacyHeaders: false,
+    skip: (req) => req.path.startsWith('/photos/') || req.path.startsWith('/videos/')
+  }));
 
   /* JSON PARSER */
   app.use(express.json({ limit: '1mb' }));

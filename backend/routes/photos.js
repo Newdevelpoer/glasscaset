@@ -83,7 +83,7 @@ uploadRouter.post('/:season', authLimiter, uploadLimiter, requirePin, upload.arr
 });
 
 /* ── DELETE ── */
-router.delete('/:season/:filename', authLimiter, async (req, res) => {
+router.delete('/:season/:filename', authLimiter, requirePin, async (req, res) => {
   const { season, filename } = req.params;
   if (!VALID_SEASONS.has(season)) return res.status(400).json({ error: 'Invalid season' });
   if (!/^[a-zA-Z0-9_\-]{1,255}\.(jpg|jpeg|png|webp|gif)$/i.test(filename)) return res.status(400).json({ error: 'Invalid filename' });

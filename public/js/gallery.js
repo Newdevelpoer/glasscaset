@@ -137,12 +137,18 @@
       var filename = this.currentFilename;
       if (!season || !filename) return;
 
+      /* Silently use stored PIN — no popup needed */
+      var pin = window.UploadManager ? UploadManager.getPin() : null;
+      var headers = {};
+      if (pin) headers['X-Upload-Pin'] = pin;
+
       var btn = document.getElementById('deleteConfirmYes');
       btn.textContent = 'Deleting…';
       btn.disabled = true;
 
       fetch('/api/photos/' + encodeURIComponent(season) + '/' + encodeURIComponent(filename), {
-        method: 'DELETE'
+        method: 'DELETE',
+        headers: headers
       })
       .then(function(res) { return res.json().then(function(d) { return { ok: res.ok, data: d }; }); })
       .then(function(result) {
