@@ -1,7 +1,7 @@
 const router = require('express').Router();
 const path   = require('path');
-const fs     = require('fs');
-const { VALID_SEASONS, VIDEOS_DIR, VALID_VIDEO } = require('../config');
+const { VALID_SEASONS, VALID_VIDEO } = require('../config');
+const { listR2Objects } = require('../r2');
 
 function getVideoMime(ext) {
   if (ext === '.webm') return 'video/webm';
@@ -10,38 +10,40 @@ function getVideoMime(ext) {
 }
 
 /* ── GET all videos: /api/videos ── */
-router.get('/videos', (req, res) => {
+router.get('/videos', async (req, res) => {
   const result = {};
-  VALID_SEASONS.forEach(season => {
-    const dir = path.join(VIDEOS_DIR, season);
+  for (const season of VALID_SEASONS) {
     result[season] = null;
-    if (!fs.existsSync(dir)) return;
     try {
-      const files = fs.readdirSync(dir)
-        .filter(f => VALID_VIDEO.has(path.extname(f).toLowerCase()) && !f.startsWith('.'));
-      if (files.length) {
-        const chosen = files[0];
+      const items = await listR2Objects(`videos/${season}/`);
+      const videoItems = items.filter(o => {
+        const ext = path.extname(o.Key).toLowerCase();
+        return VALID_VIDEO.has(ext) && !path.basename(o.Key).startsWith('.');
+      });
+      if (videoItems.length) {
+        const chosen = path.basename(videoItems[0].Key);
         result[season] = {
           url: `/videos/${season}/${chosen}`,
           type: getVideoMime(path.extname(chosen).toLowerCase())
         };
       }
     } catch {}
-  });
+  }
   res.json(result);
 });
 
 /* ── GET single season video: /api/video/:season ── */
-router.get('/video/:season', (req, res) => {
+router.get('/video/:season', async (req, res) => {
   const season = req.params.season;
   if (!VALID_SEASONS.has(season)) return res.status(400).json({ error: 'Invalid season' });
-  const dir = path.join(VIDEOS_DIR, season);
-  if (!fs.existsSync(dir)) return res.json({ video: null });
   try {
-    const files = fs.readdirSync(dir)
-      .filter(f => VALID_VIDEO.has(path.extname(f).toLowerCase()) && !f.startsWith('.'));
-    if (!files.length) return res.json({ video: null });
-    const chosen = files[0];
+    const items = await listR2Objects(`videos/${season}/`);
+    const videoItems = items.filter(o => {
+      const ext = path.extname(o.Key).toLowerCase();
+      return VALID_VIDEO.has(ext) && !path.basename(o.Key).startsWith('.');
+    });
+    if (!videoItems.length) return res.json({ video: null });
+    const chosen = path.basename(videoItems[0].Key);
     res.json({
       video: `/videos/${season}/${chosen}`,
       filename: chosen,

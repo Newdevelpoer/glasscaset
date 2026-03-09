@@ -1,20 +1,22 @@
 const router = require('express').Router();
 const path   = require('path');
-const fsp    = require('fs').promises;
-const { VALID_SEASONS, PHOTOS_DIR, THUMBS_DIR, MAX_PER_SEASON, MAX_FILE_MB } = require('../config');
+const { v4: uuidv4 } = require('uuid');
+const { VALID_SEASONS, MAX_PER_SEASON } = require('../config');
 const { uploadLimiter, authLimiter, requirePin } = require('../middleware');
 const upload      = require('../multerSetup');
 const ensureThumb = require('../thumbnails');
+const { uploadToR2, deleteFromR2, listR2Objects } = require('../r2');
 
 /* ── TOTAL PHOTO COUNT (lightweight) ── */
 router.get('/total', async (req, res) => {
   let total = 0;
   for (const season of VALID_SEASONS) {
-    const dir = path.join(PHOTOS_DIR, season);
-    try {
-      const files = await fsp.readdir(dir);
-      total += files.filter(f => /\.(jpg|jpeg|png|webp|gif)$/i.test(f)).length;
-    } catch {}
+    const items = await listR2Objects(`photos/${season}/`);
+    /* Filter out .thumbs prefix and non-image keys */
+    total += items.filter(o => {
+      const k = o.Key;
+      return !k.includes('.thumbs') && /\.(jpg|jpeg|png|webp|gif)$/i.test(k);
+    }).length;
   }
   res.json({ total });
 });
@@ -23,58 +25,59 @@ router.get('/total', async (req, res) => {
 router.get('/:season', async (req, res) => {
   const season = req.params.season;
   if (!VALID_SEASONS.has(season)) return res.status(400).json({ error: 'Invalid season' });
-  const dir = path.join(PHOTOS_DIR, season);
   try {
-    await fsp.access(dir);
-  } catch {
-    return res.json({ photos: [], count: 0 });
-  }
-  try {
-    const allFiles = await fsp.readdir(dir);
-    const imgFiles = allFiles.filter(f => /\.(jpg|jpeg|png|webp|gif)$/i.test(f));
-    const files = await Promise.all(imgFiles.map(async f => {
-      const stat = await fsp.stat(path.join(dir, f));
-      const thumb = await ensureThumb(season, f);
+    const items = await listR2Objects(`photos/${season}/`);
+    /* Filter only direct image files (not .thumbs) */
+    const imgItems = items.filter(o => {
+      const k = o.Key;
+      return !k.includes('.thumbs') && /\.(jpg|jpeg|png|webp|gif)$/i.test(k);
+    });
+
+    const files = await Promise.all(imgItems.map(async o => {
+      const filename = path.basename(o.Key);
+      const thumbUrl = await ensureThumb(season, filename);
       return {
-        filename: f,
-        url: `/photos/${season}/${f}`,
-        thumb: thumb || `/photos/${season}/${f}`,
-        uploadedAt: stat.mtime.toISOString()
+        filename,
+        url: `/photos/${season}/${filename}`,
+        thumb: thumbUrl || `/photos/${season}/${filename}`,
+        uploadedAt: o.LastModified ? o.LastModified.toISOString() : new Date().toISOString()
       };
     }));
     files.sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt));
     res.json({ season, photos: files, count: files.length });
-  } catch {
+  } catch (err) {
+    console.error('[PHOTOS LIST]', err.message);
     res.json({ photos: [], count: 0 });
   }
 });
 
-/* ── UPLOAD (separate router to avoid /:season collision) ── */
+/* ── UPLOAD ── */
 const uploadRouter = require('express').Router();
 
-uploadRouter.post('/:season', authLimiter, uploadLimiter, requirePin, async (req, res, next) => {
+uploadRouter.post('/:season', authLimiter, uploadLimiter, requirePin, upload.array('photos', 20), async (req, res) => {
   const season = req.params.season;
   if (!VALID_SEASONS.has(season)) return res.status(400).json({ error: 'Invalid season' });
-  const dir = path.join(PHOTOS_DIR, season);
+
+  /* Check capacity */
   try {
-    await fsp.access(dir);
-    const files = await fsp.readdir(dir);
-    const cnt = files.filter(f => /\.(jpg|jpeg|png|webp|gif)$/i.test(f)).length;
+    const items = await listR2Objects(`photos/${season}/`);
+    const cnt = items.filter(o => !o.Key.includes('.thumbs') && /\.(jpg|jpeg|png|webp|gif)$/i.test(o.Key)).length;
     if (cnt >= MAX_PER_SEASON) return res.status(400).json({ error: 'Season storage full.' });
-  } catch {
-    // dir doesn't exist yet, that's fine
-  }
-  next();
-}, upload.array('photos', 20), async (req, res) => {
+  } catch {}
+
   if (!req.files?.length) return res.status(400).json({ error: 'No files received.' });
-  const results = req.files.map(f => ({
-    filename: f.filename,
-    url: `/photos/${req.params.season}/${f.filename}`,
-    size: f.size
-  }));
-  // Fire-and-forget thumbnail generation
-  for (const f of req.files) {
-    ensureThumb(req.params.season, f.filename).catch(() => {});
+
+  const results = [];
+  for (const file of req.files) {
+    const ext = path.extname(file.originalname).toLowerCase();
+    const filename = uuidv4() + ext;
+    const key = `photos/${season}/${filename}`;
+    await uploadToR2(key, file.buffer, file.mimetype);
+    const url = `/photos/${season}/${filename}`;
+    results.push({ filename, url, size: file.size });
+
+    /* Fire-and-forget thumbnail generation */
+    ensureThumb(season, filename, file.buffer).catch(() => {});
   }
   res.json({ success: true, uploaded: results });
 });
@@ -84,17 +87,17 @@ router.delete('/:season/:filename', authLimiter, async (req, res) => {
   const { season, filename } = req.params;
   if (!VALID_SEASONS.has(season)) return res.status(400).json({ error: 'Invalid season' });
   if (!/^[a-zA-Z0-9_\-]{1,255}\.(jpg|jpeg|png|webp|gif)$/i.test(filename)) return res.status(400).json({ error: 'Invalid filename' });
-  const fp = path.join(PHOTOS_DIR, season, filename);
-  if (!fp.startsWith(PHOTOS_DIR)) return res.status(403).json({ error: 'Forbidden' });
+
+  const key = `photos/${season}/${filename}`;
   try {
-    await fsp.access(fp);
-  } catch {
-    return res.status(404).json({ error: 'Not found' });
+    await deleteFromR2(key);
+    /* Also delete thumbnail */
+    deleteFromR2(`photos/.thumbs/${season}/${filename}`).catch(() => {});
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[PHOTO DELETE]', err.message);
+    res.status(500).json({ error: 'Delete failed.' });
   }
-  await fsp.unlink(fp);
-  const thumbPath = path.join(THUMBS_DIR, season, filename);
-  fsp.unlink(thumbPath).catch(() => {});
-  res.json({ success: true });
 });
 
 module.exports = { photosRouter: router, uploadRouter };

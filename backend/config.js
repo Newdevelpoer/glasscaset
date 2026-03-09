@@ -28,9 +28,17 @@ module.exports = {
   THUMB_WIDTH:   400,
   THUMB_QUALITY: 80,
 
+  /* Cloudflare R2 */
+  R2_ACCOUNT_ID:       process.env.ACCOUNT_ID        || '',
+  R2_ACCESS_KEY_ID:    process.env.ACCESS_KEY_ID      || '',
+  R2_SECRET_ACCESS_KEY:process.env.SECRET_ACCESS_KEY_ID || '',
+  R2_BUCKET_NAME:      process.env.R2_BUCKET_NAME     || 'glasscaset',
+  R2_PUBLIC_URL:       (process.env.R2_PUBLIC_URL      || '').replace(/\/+$/, ''),
+
   ROOT_DIR,
   PUBLIC_DIR,
   PHOTOS_DIR,
   THUMBS_DIR,
   VIDEOS_DIR,
 };
+

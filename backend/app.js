@@ -1,6 +1,7 @@
 const express = require('express');
 const { applyMiddleware } = require('./middleware');
 const { MAX_FILE_MB, PUBLIC_DIR } = require('./config');
+const { getR2Stream } = require('./r2');
 const path = require('path');
 
 /* ── Route modules ── */
@@ -18,6 +19,32 @@ function createApp() {
 
   /* ── SEO (top-level paths) ── */
   app.use(seoRoutes);
+
+  /* ── R2 media proxy: stream /photos/* and /videos/* from R2 ── */
+  app.get('/photos/*', async (req, res) => {
+    try {
+      const key = 'photos/' + req.params[0];
+      const { stream, contentType, contentLength } = await getR2Stream(key);
+      res.set('Content-Type', contentType || 'application/octet-stream');
+      if (contentLength) res.set('Content-Length', String(contentLength));
+      res.set('Cache-Control', 'public, max-age=31536000, immutable');
+      stream.pipe(res);
+    } catch {
+      res.status(404).json({ error: 'Not found' });
+    }
+  });
+  app.get('/videos/*', async (req, res) => {
+    try {
+      const key = 'videos/' + req.params[0];
+      const { stream, contentType, contentLength } = await getR2Stream(key);
+      res.set('Content-Type', contentType || 'video/mp4');
+      if (contentLength) res.set('Content-Length', String(contentLength));
+      res.set('Cache-Control', 'public, max-age=31536000, immutable');
+      stream.pipe(res);
+    } catch {
+      res.status(404).json({ error: 'Not found' });
+    }
+  });
 
   /* ── API routes ── */
   app.use('/api/photos',  photosRouter);       // /api/photos/total, /api/photos/:season, /api/photos/:season/:filename

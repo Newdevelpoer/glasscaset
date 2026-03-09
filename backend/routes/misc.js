@@ -1,10 +1,10 @@
 const router = require('express').Router();
 const path   = require('path');
-const fsp    = require('fs').promises;
 const rateLimit = require('express-rate-limit');
-const { VALID_SEASONS, PHOTOS_DIR, VIDEOS_DIR, MAX_PER_SEASON, SITE_URL, UPLOAD_PIN } = require('../config');
+const { VALID_SEASONS, MAX_PER_SEASON, SITE_URL, UPLOAD_PIN } = require('../config');
 const { authLimiter } = require('../middleware');
 const ensureThumb = require('../thumbnails');
+const { listR2Objects } = require('../r2');
 
 /* Rate limiter for expensive endpoints */
 const heavyLimiter = rateLimit({
@@ -35,23 +35,22 @@ router.get('/manifest', heavyLimiter, async (req, res) => {
   };
 
   for (const season of VALID_SEASONS) {
-    const dir = path.join(PHOTOS_DIR, season);
     try {
-      const files = await fsp.readdir(dir);
-      const imgs = files.filter(f => /\.(jpg|jpeg|png|webp|gif)$/i.test(f));
-      for (const f of imgs) {
-        const thumb = await ensureThumb(season, f);
+      const items = await listR2Objects(`photos/${season}/`);
+      const imgs = items.filter(o => !o.Key.includes('.thumbs') && /\.(jpg|jpeg|png|webp|gif)$/i.test(o.Key));
+      for (const o of imgs) {
+        const filename = path.basename(o.Key);
+        const thumb = await ensureThumb(season, filename);
         if (thumb) assets.thumbs.push(thumb);
       }
     } catch {}
   }
 
   for (const season of VALID_SEASONS) {
-    const vDir = path.join(VIDEOS_DIR, season);
     try {
-      const files = await fsp.readdir(vDir);
-      const vids = files.filter(f => /\.(mp4|webm|mov|ogg)$/i.test(f) && !f.startsWith('.'));
-      if (vids.length) assets.videos.push(`/videos/${season}/${vids[0]}`);
+      const items = await listR2Objects(`videos/${season}/`);
+      const vids = items.filter(o => /\.(mp4|webm|mov|ogg)$/i.test(o.Key) && !path.basename(o.Key).startsWith('.'));
+      if (vids.length) assets.videos.push(`/videos/${season}/${path.basename(vids[0].Key)}`);
     } catch {}
   }
 
@@ -63,15 +62,12 @@ router.get('/storage', heavyLimiter, async (req, res) => {
   const stats = {};
   let totalPhotos = 0, totalSize = 0;
   for (const season of VALID_SEASONS) {
-    const dir = path.join(PHOTOS_DIR, season);
     const s = { photos: 0, bytes: 0, capacity: MAX_PER_SEASON };
     try {
-      const allFiles = await fsp.readdir(dir);
-      const files = allFiles.filter(f => /\.(jpg|jpeg|png|webp|gif)$/i.test(f));
-      s.photos = files.length;
-      for (const f of files) {
-        try { const st = await fsp.stat(path.join(dir, f)); s.bytes += st.size; } catch {}
-      }
+      const items = await listR2Objects(`photos/${season}/`);
+      const imgs = items.filter(o => !o.Key.includes('.thumbs') && /\.(jpg|jpeg|png|webp|gif)$/i.test(o.Key));
+      s.photos = imgs.length;
+      s.bytes = imgs.reduce((sum, o) => sum + (o.Size || 0), 0);
     } catch {}
     totalPhotos += s.photos;
     totalSize += s.bytes;
