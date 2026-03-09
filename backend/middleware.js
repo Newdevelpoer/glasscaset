@@ -5,7 +5,10 @@ const rateLimit  = require('express-rate-limit');
 const compression = require('compression');
 const morgan     = require('morgan');
 const crypto     = require('crypto');
-const { PUBLIC_DIR, UPLOAD_PIN } = require('./config');
+const { PUBLIC_DIR, UPLOAD_PIN, R2_PUBLIC_URL } = require('./config');
+
+/* Extract R2 domain for CSP */
+const r2Origin = R2_PUBLIC_URL ? new URL(R2_PUBLIC_URL).origin : '';
 
 /* ── Apply all middleware to an Express app ── */
 function applyMiddleware(app) {
@@ -33,8 +36,8 @@ function applyMiddleware(app) {
         workerSrc:  ["'self'"],
         styleSrc:   ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com', 'https://cdnjs.cloudflare.com'],
         fontSrc:    ["'self'", 'https://fonts.gstatic.com', 'https://cdnjs.cloudflare.com'],
-        imgSrc:     ["'self'", 'data:', 'blob:'],
-        mediaSrc:   ["'self'", 'blob:'],
+        imgSrc:     ["'self'", 'data:', 'blob:', r2Origin].filter(Boolean),
+        mediaSrc:   ["'self'", 'blob:', r2Origin].filter(Boolean),
         connectSrc: ["'self'", 'https://fonts.googleapis.com', 'https://fonts.gstatic.com'],
         frameSrc:   ["'none'"],
         objectSrc:  ["'none'"],
