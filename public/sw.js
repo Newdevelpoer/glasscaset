@@ -2,7 +2,8 @@
    SERVICE WORKER — Her Universe
    Cache-first for assets, network-first for HTML/API
 ═══════════════════════════════════════════════════ */
-var CACHE_NAME = 'her-universe-v8';
+var CACHE_NAME = 'her-universe-v9';
+var R2_CDN = 'https://pub-99ed6b790de84467a3b4484443e81c79.r2.dev';
 
 var PRECACHE = [
   '/',
@@ -17,6 +18,7 @@ var PRECACHE = [
   '/css/upload.css',
   '/css/btn-hover.css',
   '/css/preloader.css',
+  '/js/cdn-rewrite.js',
   '/js/cursor.js',
   '/js/common.js',
   '/js/home.js',
@@ -55,6 +57,15 @@ self.addEventListener('activate', function (e) {
   );
 });
 
+/* ── Helper: rewrite /photos/ and /videos/ URLs to R2 CDN ── */
+function toCdnUrl(request) {
+  var url = new URL(request.url);
+  if (url.pathname.startsWith('/photos/') || url.pathname.startsWith('/videos/')) {
+    return new Request(R2_CDN + url.pathname, { mode: 'cors', credentials: 'omit' });
+  }
+  return request;
+}
+
 /* ── FETCH: strategy per resource type ── */
 self.addEventListener('fetch', function (e) {
   var url = new URL(e.request.url);
@@ -70,19 +81,20 @@ self.addEventListener('fetch', function (e) {
     return;
   }
 
-  // Photos, videos, thumbs — cache-first, persist with eviction
+  // Photos, videos, thumbs — rewrite to R2 CDN, cache-first
   if (url.pathname.match(/\.(jpg|jpeg|png|webp|gif|mp4|webm|mov|ogg)$/i) ||
       url.pathname.startsWith('/photos/') ||
       url.pathname.startsWith('/videos/')) {
+    var cdnReq = toCdnUrl(e.request);
     e.respondWith(
-      caches.match(e.request).then(function (cached) {
+      caches.match(cdnReq).then(function (cached) {
         if (cached) return cached;
-        return fetch(e.request).then(function (res) {
+        return fetch(cdnReq).then(function (res) {
           // Never cache partial (206) responses — video range requests
           if (res.ok && res.status !== 206) {
             var clone = res.clone();
             caches.open(CACHE_NAME).then(function (c) {
-              c.put(e.request, clone);
+              c.put(cdnReq, clone);
               // Evict oldest entries if cache grows too large
               c.keys().then(function (keys) {
                 var MAX_MEDIA_CACHE = 200;
