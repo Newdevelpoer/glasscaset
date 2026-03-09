@@ -1,0 +1,85 @@
+/* ═══════════════════════════════════════════
+   PRELOADER — loading screen shown on first visit
+   Pure CSS animation, no JS dependency
+═══════════════════════════════════════════ */
+#preloader {
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  background: #fdf6ff;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  transition: opacity .6s cubic-bezier(.22,1,.36,1), visibility .6s;
+}
+#preloader.done {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.pl-logo {
+  font-family: 'Playfair Display', serif;
+  font-size: 2rem;
+  font-weight: 700;
+  color: #2a1540;
+  margin-bottom: 2rem;
+  opacity: 0;
+  animation: plFade .8s .2s forwards;
+}
+.pl-logo .pk { color: #FFAECC; }
+
+/* Pulsing hearts loader */
+.pl-hearts {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 2rem;
+}
+.pl-heart {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  animation: plPulse 1.2s ease-in-out infinite;
+}
+.pl-heart:nth-child(1) { background: #CDBADB; animation-delay: 0s; }
+.pl-heart:nth-child(2) { background: #FFC6DD; animation-delay: .15s; }
+.pl-heart:nth-child(3) { background: #FFAECC; animation-delay: .3s; }
+.pl-heart:nth-child(4) { background: #BDE0FE; animation-delay: .45s; }
+.pl-heart:nth-child(5) { background: #A2D2FF; animation-delay: .6s; }
+
+/* Progress bar */
+.pl-bar-wrap {
+  width: 200px;
+  height: 3px;
+  background: rgba(42,21,64,.08);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: 1rem;
+  opacity: 0;
+  animation: plFade .8s .4s forwards;
+}
+.pl-bar {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #CDBADB, #FFAECC, #A2D2FF);
+  border-radius: 3px;
+  transition: width .3s ease-out;
+}
+
+.pl-text {
+  font-family: 'DM Sans', sans-serif;
+  font-size: .8rem;
+  color: rgba(42,21,64,.4);
+  letter-spacing: .05em;
+  opacity: 0;
+  animation: plFade .8s .5s forwards;
+}
+
+@keyframes plPulse {
+  0%, 100% { transform: scale(1); opacity: .4; }
+  50% { transform: scale(1.5); opacity: 1; }
+}
+@keyframes plFade {
+  to { opacity: 1; }
+}

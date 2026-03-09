@@ -1,0 +1,9 @@
+node_modules/
+.env
+.DS_Store
+*.log
+*.bak
+public/photos/**/*
+!public/photos/**/.gitkeep
+public/videos/**/*
+!public/videos/**/.gitkeep
