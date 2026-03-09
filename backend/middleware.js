@@ -45,6 +45,7 @@ function applyMiddleware(app) {
         formAction: ["'self'"],
       }
     },
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
     crossOriginEmbedderPolicy: false,
     referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
     hsts: { maxAge: 31536000, includeSubDomains: true, preload: true },
